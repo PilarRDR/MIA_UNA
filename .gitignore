@@ -1,0 +1,12 @@
+# Reglas de exclusión para archivos mantenidos solo localmente
+
+# Archivos en el directorio raiz (excluidos del seguimiento)
+Clase 0 - Introducci*n Estad*stica aplicada MIAAD 2.pptx
+Enlaces a materiales y repositorios.docx
+Probabilidad,_valor_esperado,_variabilidad_y_distribuciones.ipynb
+
+# Archivos por patrón (ignorando todos los .zip)
+*.zip
+
+R_EA_IAAD-V1/
+R_EA_IAAD-VF/
