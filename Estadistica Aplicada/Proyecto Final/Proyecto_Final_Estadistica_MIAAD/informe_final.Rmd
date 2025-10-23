@@ -1,9 +1,36 @@
-# ==============================================================================
-# PROYECTO FINAL ESTADÍSTICA APLICADA - MIAAD
-# ==============================================================================
+---
+title: "Proyecto Final Estadística Aplicada: Análisis de Créditos Agrícolas"
+author: "Godoy_Chaparro_RuizDiaz"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true 
+    toc_depth: 3 
+    code_folding: hide 
+    theme: flatly
+    highlight: tango
+---
 
+```{r setup, include=FALSE}
+# Configuración global de los 'chunks' de R
+knitr::opts_chunk$set(
+  echo = TRUE, # Mostrar el código en el informe
+  message = FALSE, # Ocultar mensajes de R
+  warning = FALSE, # Ocultar advertencias de R
+  fig.align = 'center', # Centrar todas las figuras
+  fig.width = 10,
+  fig.height = 6
+)
+```
+
+# 1. Introducción y Configuración
+El objetivo de este informe es analizar la distribución y evolución de los desembolsos de créditos para el sector AGRICULTURA, con un enfoque en la comparación por tipo de Moneda (Nacional vs. Extranjera) y el desempeño de los principales bancos.
+
+## 1.1. Carga de Paquetes y Datos
+Se cargan las librerías necesarias para el análisis (limpieza, manipulación, visualización y pruebas estadísticas) y se importa el conjunto de datos crudo.
+
+```{r importacion_datos}
 # 1. IMPORTACIÓN DE PAQUETES Y DATOS
-# ------------------------------------------------------------------------------
 if(!require(pacman)) install.packages("pacman")
 pacman::p_load(
   tidyverse, 
@@ -13,10 +40,11 @@ pacman::p_load(
   car,     # Para test de Levene
   rstatix,# Para verificación de supuestos de normalidad
   ggpubr, # Para verificación de supuestos de normalidad
-  scales   # Para formato
+  scales,   # Para formato
+  broom
 )
 
-# Importar el conjunto de datos CSV (está en el directorio del proyecto)
+# Importar el conjunto de datos CSV (Asegúrate de que 'Cred_por_sector.csv' esté en tu directorio)
 df_creditos_raw <- read_csv("Cred_por_sector.csv")
 
 # Verificación inicial
@@ -24,34 +52,37 @@ message("Dimensiones y Estructura inicial del dataset:")
 print(dim(df_creditos_raw))
 print(glimpse(df_creditos_raw))
 
+```
 
+# 2. Preprocesamiento de Datos
+
+Se aplican una serie de pasos de limpieza, filtrado, transformación y agregación para preparar el dataset para el análisis, enfocándose en el sector AGRICULTURA y consolidando las fusiones bancarias.
+
+```{r preprocesamiento}
 # 2. PREPROCESAMIENTO: LIMPIEZA, ORDENACIÓN Y TRANSFORMACIÓN
-# ------------------------------------------------------------------------------
-
 df_final <- df_creditos_raw %>%
-  # Paso 1: Limpieza de nombres de columnas (limpia espacios, mayúsculas, etc.)
+  # Paso 1: Limpieza de nombres de columnas (limpia espacios, mayúsculas, etc.) 
   clean_names() %>%
   
-  # Paso 2: Filtrar por sector AGRICULTURA
+  # Paso 2: Filtrar por sector AGRICULTURA 
   filter(sector_e == "AGRICULTURA") %>%
   
-  # Paso 3: Conversión de la columna 'fecha' a formato Date (YYYY-MM-01)
+  # Paso 3: Conversión de la columna 'fecha' a formato Date (YYYY-MM-01) 
   mutate(
-    fecha = ymd(paste0(fecha, "/01")) 
+    fecha = ymd(paste0(fecha, "/01"))
   ) %>%
   
   # Paso 4: Eliminar la columna 'sector_e' 
-  select(-sector_e) %>% 
+  select(-sector_e) %>%
   
   # Paso 5: Transponer/Pivotar a formato largo 
-  # Se usan todas las columnas que no son 'fecha' o 'moneda'
   pivot_longer(
     cols = -c(fecha, moneda),
     names_to = "banco",
     values_to = "monto_credito"
   ) %>%
   
-  # Paso 6: Reemplazar y fusionar nombres de bancos
+  # Paso 6: Reemplazar y fusionar nombres de bancos 
   mutate(
     banco = case_when(
       banco == "gnb_fusion" ~ "gnb",
@@ -60,7 +91,7 @@ df_final <- df_creditos_raw %>%
       TRUE ~ banco # Mantener el resto de nombres sin cambios
     ),
     # Asegurar que el monto sea numérico
-    monto_credito = as.numeric(monto_credito) 
+    monto_credito = as.numeric(monto_credito)
   ) %>%
   
   # Paso 7: Agrupar la data por la fusión de bancos
@@ -70,21 +101,25 @@ df_final <- df_creditos_raw %>%
   ) %>%
   ungroup() %>%
   
-  # Paso 8: Filtrar valores extremos/inconsistentes (0.0) [Necesario para evitar sesgos]
+  # Paso 8: Filtrar valores extremos/inconsistentes (monto_credito > 0)
   filter(monto_credito > 0)
-
 
 # Paso Final: Verificación post-limpieza
 message("\nDimensiones y Estructura del dataset FINAL (limpio y largo):")
 print(dim(df_final))
 print(glimpse(df_final))
 
-# 3. EXPLORACION DE DATOS
-# ------------------------------------------------------------------------------
+```
 
+# 3. Exploración de Datos (EDA)
+Esta sección presenta un resumen de los datos limpios, incluyendo estadísticas descriptivas por moneda y banco, y visualizaciones clave.
+
+
+## 3.1. Resumen Estadístico por Moneda
+Se comparan las principales estadísticas de los créditos entre Moneda Nacional (MN) y Moneda Extranjera (ME).
+
+```{r exploracion, results='asis'}
 # === ANÁLISIS DESCRIPTIVO POR MONEDA ===
-
-# Usamos group_by y summarise para obtener estadísticas clave
 df_resumen_moneda <- df_final %>%
   group_by(moneda) %>%
   summarise(
@@ -98,8 +133,7 @@ df_resumen_moneda <- df_final %>%
 message("\nResumen Estadístico por Moneda:")
 print(df_resumen_moneda)
 
-# Utilizacion gt para una tabla profesional
-
+# TABLA PROFESIONAL CON 'gt'
 df_resumen_moneda %>%
   gt() %>%
   tab_header(
@@ -111,8 +145,12 @@ df_resumen_moneda %>%
     use_seps = TRUE
   )
 
-# === TABLA DE ESTADÍSTICOS DESCRIPTIVOS DETALLADOS POR BANCO Y MONEDA ===
+```
 
+## 3.2. Estadísticas Descriptivas Detalladas por Banco y Moneda
+Tabla detallada que muestra la dispersión y tendencia central de los desembolsos para cada combinación de banco y tipo de moneda.
+
+```{r exploracioni,results='asis'}
 # 1. Cálculo de las métricas clave (Media, SD, Quartiles)
 descriptivos_detallados <- df_final %>%
   group_by(banco, moneda) %>%
@@ -133,11 +171,11 @@ tabla_descriptiva_completa <- descriptivos_detallados %>%
     title = "Estadísticas Descriptivas Detalladas de Desembolsos por Banco",
     subtitle = "Sector: Agricultura. Valores en Guaraníes (G)"
   ) %>%
-  # Redondeo y formato de números grandes (en Millones de G)
+  # Redondeo y formato de números grandes (en Guaraníes)
   fmt_number(
     columns = c(Media, DS, Q1, Mediana, Q3),
-    decimals = 0, # Mantenemos sin decimales ya que son valores grandes
-    use_seps = TRUE # Usar separador de miles
+    decimals = 0,
+    use_seps = TRUE
   ) %>%
   # Etiquetado y Alineación
   cols_label(
@@ -155,50 +193,52 @@ tabla_descriptiva_completa <- descriptivos_detallados %>%
     palette = "Blues"
   )
 
-# Mostrar la tabla en el visor/consola de RStudio
 print(tabla_descriptiva_completa)
 
-# === RANKING DE BANCOS ===
+```
 
+## 3.3. Ranking de Bancos (Monto Total)
+Identificación de los 5 bancos con el mayor monto total de crédito agrícola en el periodo analizado.
+
+```{r exploracionii, results='asis'}
+# === RANKING DE BANCOS ===
 df_top_bancos <- df_final %>%
   group_by(banco) %>%
   summarise(Monto_Total_Credito = sum(monto_credito), .groups = 'drop') %>%
   arrange(desc(Monto_Total_Credito)) %>%
   head(5)
 
-# 
+# TABLA PROFESIONAL CON 'gt'
 tabla_top_bancos <- df_top_bancos %>%
   gt() %>%
   tab_header(
     title = "Top 5 Bancos con Mayor Monto Total de Crédito Agrícola",
     subtitle = "Periodo Analizado"
   ) %>%
-  # Formato: Monto Total de Crédito sin decimales y con separadores de miles
   fmt_number(
     columns = Monto_Total_Credito,
     decimals = 0,
-    use_seps = TRUE # Activa la separación de miles
+    use_seps = TRUE
   ) %>%
-  # Etiquetas de columna más claras
   cols_label(
     banco = "Banco",
     Monto_Total_Credito = "Monto Total Crédito"
   ) %>%
-  # Añadir estilo de celda
   data_color(
     columns = Monto_Total_Credito,
     palette = "Greens"
   )
 
-# Mostrar la tabla en la consola o en el visor de RStudio
 print(tabla_top_bancos)
 
-#Visualización A: Evolución del Crédito Agrícola por Moneda (Series de Tiempo)
-#monto total de crédito ha evolucionado a lo largo del tiempo, separando por el tipo de moneda (MN vs. ME), 
-#crucial para la justificación de la hipótesis.
+```
 
+# 3.4. Visualizaciones Clave
+## Evolución Mensual del Crédito por Moneda
+Muestra cómo ha evolucionado el monto total de crédito, diferenciando entre Moneda Nacional (MN) y Moneda Extranjera (ME).
+
+```{r evolucion, results='asis'}
 # === GRÁFICO 1: EVOLUCIÓN TEMPORAL POR MONEDA ===
-
 grafico_tiempo <- df_final %>%
   group_by(fecha, moneda) %>%
   summarise(credito_total = sum(monto_credito), .groups = 'drop') %>%
@@ -222,13 +262,14 @@ grafico_tiempo <- df_final %>%
 
 print(grafico_tiempo)
 
+```
 
-#Visualización B: Distribución de Crédito por Banco y Moneda
-#Gráfico de barras apiladas o facetado 
-#permite visualizar la participación de cada banco y cómo se distribuye su crédito entre MN y ME.
+##  Participación Bancaria por Moneda
 
+Gráfico de barras apiladas que ilustra la contribución de cada banco al crédito total y su distribución entre MN y ME.
+
+```{r evolucioni, results='asis'}
 # === GRÁFICO 2: PARTICIPACIÓN BANCARIA POR MONEDA ===
-
 grafico_bancos <- df_final %>%
   # Agrupamos la data para tener la participación total de cada banco
   group_by(banco, moneda) %>%
@@ -256,47 +297,47 @@ grafico_bancos <- df_final %>%
 
 print(grafico_bancos)
 
-# ==============================================================================
-# PRUEBA 1: T-TEST (COMPARANDO MONEDA NACIONAL vs. MONEDA EXTRANJERA)
-# ==============================================================================
+```
 
-# Hipótesis: H0: No hay diferencia en el monto promedio entre MN y ME.
+# 4. Pruebas de Hipótesis
+## 4.1. T-Test: Comparación MN vs. ME
+Hipótesis Nula ($H_0$): No existe una diferencia estadísticamente significativa en el monto promedio de crédito entre Moneda Nacional (MN) y Moneda Extranjera (ME).
 
-message("\n--- RESULTADO DEL T-TEST (MN vs. ME) ---")
+Verificación de Supuestos T-Test
 
-# 1. VERIFICACIÓN DE SUPUESTOS DEL T-TEST
-# ------------------------------------------------------------------------------
-
+```{r pht_test, results='asis'}
 # 1.1 Normalidad (Test de Shapiro-Wilk para cada grupo)
-# El test de Shapiro es muy sensible con muestras grandes, por lo que el QQ Plot es clave.
 message("\n--- 1. Normalidad (Shapiro-Wilk por grupo) ---")
 normalidad_mn_me <- df_final %>%
   group_by(moneda) %>%
   rstatix::shapiro_test(monto_credito)
 print(normalidad_mn_me)
 
+# 1.2 Inspección Visual de Normalidad (QQ Plot)
 message("\n--- Inspección Visual de Normalidad (QQ Plot) ---")
-# Gráfico QQ para visualizar la normalidad en ambos grupos
 normalidad_qq_plot <- ggplot(df_final, aes(sample = monto_credito, color = moneda)) +
   geom_qq() +
   geom_qq_line() +
   facet_wrap(~ moneda) +
   labs(title = "QQ Plot de Monto de Crédito por Moneda")
 print(normalidad_qq_plot)
-# INTERPRETACIÓN: Los puntos deben seguir la línea diagonal.
 
-
-# 1.2 Homogeneidad de Varianzas (Test de Levene)
+# 1.3 Homogeneidad de Varianzas (Test de Levene)
 levene_test_mn_me <- car::leveneTest(monto_credito ~ moneda, data = df_final)
 message("\n--- 2. Homogeneidad de Varianzas (Levene) ---")
 print(levene_test_mn_me)
-# INTERPRETACIÓN: Si p-valor < 0.05, se rechaza H0 (varianzas NO iguales).
+
+# Decisión sobre la varianza a usar en el T-Test
 var_iguales <- levene_test_mn_me$`Pr(>F)`[1] >= 0.05
 message(paste("Decisión sobre Varianza (p-valor Levene):", if (var_iguales) "Usar T-Test Clásico (var.equal=TRUE)" else "Usar T-Test de Welch (var.equal=FALSE)"))
 
+```
 
+## Ejecución del T-Test
+
+
+```{r pht_testi, results='asis',message=TRUE}
 # 2. Ejecución del T-Test
-# ------------------------------------------------------------------------------
 t_test_resultado <- t.test(monto_credito ~ moneda, data = df_final, var.equal = var_iguales)
 
 print(t_test_resultado)
@@ -314,16 +355,22 @@ if (p_val_ttest < 0.05) {
 }
 message(paste("Media MN:", scales::comma(media_mn, accuracy = 0.01), " | Media ME:", scales::comma(media_me, accuracy = 0.01)))
 
+```
 
-# ==============================================================================
-# ️ CREACIÓN DE df_final_me (Para el análisis ANOVA)
-# ==============================================================================
-#La volumetria en ME son significativamente mas elevadas
+# 4.2. ANOVA: Comparación de Medias del Top 5 Bancos (en ME)
 
+
+Se aísla el grupo de Moneda Extranjera (ME) para comparar si el monto promedio de crédito varía entre los 5 principales bancos que operan en esta moneda
+
+Hipótesis Nula ($H_0$): No existe una diferencia estadísticamente significativa en el monto promedio de crédito en ME entre el Top 5 de bancos.
+
+## Preparación del Dataset
+
+```{r pht_anova, results='asis',message=TRUE}
+# === CREACIÓN DE df_final_me (Para el análisis ANOVA) ===
 message("\n--- CREANDO DATAFRAME FILTRADO POR MONEDA EXTRANJERA (ME) ---")
 
 df_final_me <- df_final %>%
-  # Filtramos el dataframe completo (df_final) para quedarnos solo con ME
   filter(moneda == "ME")
 
 # Identificamos los 5 principales bancos DENTRO de la muestra de ME
@@ -334,23 +381,16 @@ top_5_bancos_me <- df_final_me %>%
   head(5) %>%
   pull(banco)
 
-# Filtramos el dataframe ME para incluir solo esos 5 bancos
 df_anova_me <- df_final_me %>%
   filter(banco %in% top_5_bancos_me)
 
 message(paste("Dimensiones del df_anova_me (Top 5 Bancos en ME):", dim(df_anova_me)[1], "filas y", dim(df_anova_me)[2], "columnas"))
 
-# ==============================================================================
-# PRUEBA 2: ANOVA (COMPARANDO MONTO PROMEDIO ENTRE TOP 5 BANCOS EN ME)
-# ==============================================================================
+```
 
-# Hipótesis: H0: No hay diferencia en el monto promedio de crédito en ME entre el Top 5 de bancos.
+## Verificación de Supuestos ANOVA
 
-message("\n--- RESULTADO DE LA PRUEBA ANOVA (en ME) ---")
-
-# 1. VERIFICACIÓN DE SUPUESTOS DEL ANOVA
-# ------------------------------------------------------------------------------
-
+```{r pht_anovai, results='asis',message=TRUE}
 # 1.1 Ejecución del Modelo ANOVA (necesario para obtener los residuos)
 modelo_anova_me <- aov(monto_credito ~ banco, data = df_anova_me)
 
@@ -358,23 +398,21 @@ modelo_anova_me <- aov(monto_credito ~ banco, data = df_anova_me)
 message("\n--- 1. Homogeneidad de Varianzas (Levene) ---")
 levene_anova_me <- car::leveneTest(monto_credito ~ banco, data = df_anova_me)
 print(levene_anova_me)
-# INTERPRETACIÓN: Si p-valor < 0.05, el supuesto se viola.
 
 # 1.3 Normalidad de los Residuos (QQ-Plot Visual)
 message("\n--- Inspección Visual de Normalidad (QQ Plot) ---")
 
-# Extraemos los residuos del modelo ANOVA
 residuos_anova <- data.frame(Residuos = residuals(modelo_anova_me))
 
-# Usamos ggpubr::ggqqplot (o rstatix::ggqqplot, son equivalentes si ambos están cargados)
-# para generar el gráfico de normalidad
 qq_plot_anova <- ggpubr::ggqqplot(residuos_anova, x = "Residuos", title = "QQ Plot de Residuos del ANOVA")
 print(qq_plot_anova)
 
-# INTERPRETACIÓN: Los puntos deben seguir la línea diagonal.
+```
 
+## Ejecución del ANOVA y Post-Hoc (Tukey)
+
+```{r pht_anovaii, results='asis'}
 # 2. EJECUCIÓN FINAL DE LA PRUEBA ANOVA
-# ------------------------------------------------------------------------------
 resultado_anova <- summary(modelo_anova_me)
 
 print(resultado_anova)
@@ -384,25 +422,74 @@ p_valor_anova <- resultado_anova[[1]]$`Pr(>F)`[1]
 message("\n--- ANÁLISIS POST-HOC (Tukey HSD en ME) ---")
 
 if (p_valor_anova < 0.05) {
-  print(TukeyHSD(modelo_anova_me))
+# 1. Transformar el resultado TukeyHSD a un data frame con tidy()
+# Nota: Accedemos a la lista '$banco' antes de 'tidy()'
+tabla_tukey_gt <- TukeyHSD(modelo_anova_me)$banco %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "comparison") %>% # Convierte los rownames (comparaciones) en una columna
+  as_tibble() %>% # Para asegurar que es un data frame limpio
+  select(comparison, diff, lwr, upr, `p adj`) %>% # Seleccionar columnas clave (los nombres que da TukeyHSD)
+  # Nombres originales de las columnas: diff, lwr, upr, p adj
+  rename(
+    estimate = diff, 
+    conf.low = lwr, 
+    conf.high = upr, 
+    adj.p.value = `p adj`
+  ) %>% 
+  mutate(
+    comparison = str_replace(comparison, "-", " vs "),
+    significativo = adj.p.value < 0.05
+  )  
+  # 2. Presentar la tabla con gt
+  tabla_tukey_presentacion <- tabla_tukey_gt %>%
+    gt() %>%
+    tab_header(
+      title = "Diferencias Significativas Post-Hoc (Tukey HSD)",
+      subtitle = "Comparación del Monto Promedio de Crédito (ME) entre Bancos"
+    ) %>%
+    fmt_number(
+      columns = c(estimate, conf.low, conf.high),
+      decimals = 0,
+      use_seps = TRUE
+    ) %>%
+    fmt_number(columns = adj.p.value, decimals = 5) %>% # Formato el p-valor
+    cols_label(
+      comparison = "Comparación",
+      estimate = "Diferencia Media",
+      conf.low = "Límite Inferior (95% IC)",
+      conf.high = "Límite Superior (95% IC)",
+      adj.p.value = "P-valor Ajustado",
+      significativo = "Significativo"
+    ) %>%
+    # Resaltar las diferencias significativas (donde p-valor < 0.05)
+    data_color(
+      columns = adj.p.value,
+      palette = c("red", "white", "darkgreen"),
+      domain = c(0, 0.05, 1) # Rojo para no significativo, Verde oscuro para significativo
+    )
+  
+  print(tabla_tukey_presentacion) # <--- Imprimir la tabla formateada
+  
   message("\nConclusión ANOVA: Se RECHAZA H0. Existe diferencia significativa en el monto promedio de crédito en ME entre al menos dos de los Top 5 bancos. El análisis Post-Hoc (Tukey HSD) muestra cuáles pares son diferentes.")
 } else {
   message("\nConclusión ANOVA: NO se puede rechazar H0. Las medias de los Top 5 bancos en ME son estadísticamente iguales.")
 }
 
+```
 
+# 4.3. Visualizaciones para ANOVA (ME)
+
+## Boxplot de Distribución de Crédito por Banco (ME)
+
+El boxplot muestra la distribución completa de los montos de crédito para cada banco, incluyendo la mediana, los cuartiles y los valores atípicos.
+
+
+```{r pht_anovaiii, results='asis'}
 # === GRÁFICO 1: BOXPLOT DE DISTRIBUCIÓN POR BANCO (ME) ===
-
-#El boxplot muestra la distribución completa de los montos de crédito para cada banco, 
-#incluyendo la mediana (línea central), los cuartiles (la caja) y los valores atípicos (puntos).
-
-#Insight: Es ideal para visualizar la variabilidad y la asimetría dentro de cada banco y si sus medianas se solapan
-#(lo que indicaría que no hay diferencia significativa).
-
 grafico_boxplot_anova <- df_anova_me %>%
   ggplot(aes(x = fct_reorder(banco, monto_credito, .fun = median, .desc = TRUE), 
              y = monto_credito)) +
-  geom_boxplot(aes(fill = banco), outlier.alpha = 0.3) + # outlier.alpha para ver los puntos atípicos
+  geom_boxplot(aes(fill = banco), outlier.alpha = 0.3) +
   scale_y_continuous(labels = scales::comma) + 
   labs(
     title = "Distribución del Monto de Crédito Agrícola (ME)",
@@ -413,22 +500,22 @@ grafico_boxplot_anova <- df_anova_me %>%
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1), # Gira las etiquetas del eje X
+    axis.text.x = element_text(angle = 45, hjust = 1), 
     plot.title = element_text(face = "bold", hjust = 0.5),
-    legend.position = "none" # La leyenda es redundante con el eje X y el color
+    legend.position = "none" 
   )
 
 print(grafico_boxplot_anova)
 
+```
 
+## Barras de Media con Intervalos de Confianza (IC 95%)
+
+Este gráfico permite ver si los intervalos de confianza de las medias de dos bancos no se solapan, lo cual es una fuerte indicación visual de diferencia significativa.
+
+
+```{r pht_anovav, results='asis'}
 # === GRÁFICO 2: BARRAS DE MEDIA CON INTERVALOS DE CONFIANZA (IC) ===
-
-#Este gráfico se enfoca directamente en la medida central (la media), que es lo que compara la ANOVA.
-#Insight: Permite ver rápidamente qué bancos tienen la media más alta y, lo más importante, 
-#las barras de error (intervalos de confianza) indican la precisión de esa media.
-#Si los intervalos de confianza de dos bancos no se solapan, 
-#es una fuerte indicación visual de que la diferencia es estadísticamente significativa
-
 grafico_barras_ic <- df_anova_me %>%
   # Calculamos la media y el error estándar (SE) para las barras de error
   group_by(banco) %>%
@@ -441,7 +528,7 @@ grafico_barras_ic <- df_anova_me %>%
   mutate(banco = fct_reorder(banco, media_credito)) %>% 
   
   ggplot(aes(x = banco, y = media_credito)) +
-  # Barras que muestran la Media
+  # Barras
   geom_bar(stat = "identity", fill = "#0072B2") + 
   # Barras de Error (Usando el 95% IC: Media ± 1.96 * SE)
   geom_errorbar(
@@ -462,3 +549,16 @@ grafico_barras_ic <- df_anova_me %>%
   theme(plot.title = element_text(face = "bold", hjust = 0))
 
 print(grafico_barras_ic)
+
+```
+
+
+
+
+
+
+
+
+
+
+
