@@ -340,69 +340,102 @@ df_anova_me <- df_final_me %>%
 
 message(paste("Dimensiones del df_anova_me (Top 5 Bancos en ME):", dim(df_anova_me)[1], "filas y", dim(df_anova_me)[2], "columnas"))
 
+
+#ANOVA de Welch (manteniendo el enfoque paramétrico pero ajustando la varianza)
+
+## Ejecución del ANOVA de Welch y Post-Hoc (Games-Howell)
+
 # ==============================================================================
-# PRUEBA 2: ANOVA (COMPARANDO MONTO PROMEDIO ENTRE TOP 5 BANCOS EN ME)
+# 2. EJECUCIÓN FINAL DE LA PRUEBA ANOVA DE WELCH (ROBUSTA)
 # ==============================================================================
 
-# Hipótesis: H0: No hay diferencia en el monto promedio de crédito en ME entre el Top 5 de bancos.
+# La función oneway.test() realiza el ANOVA de Welch (var.equal=FALSE)
+resultado_anova_welch <- oneway.test(monto_credito ~ banco, 
+                                     data = df_anova_me, 
+                                     var.equal = FALSE) 
 
-message("\n--- RESULTADO DE LA PRUEBA ANOVA (en ME) ---")
+message("=====================================================")
+message("  RESULTADOS DEL ANOVA DE WELCH")
+message("=====================================================")
+print(resultado_anova_welch) 
 
-# 1. VERIFICACIÓN DE SUPUESTOS DEL ANOVA
-# ------------------------------------------------------------------------------
+p_valor_anova <- resultado_anova_welch$p.value 
 
-# 1.1 Ejecución del Modelo ANOVA (necesario para obtener los residuos)
-modelo_anova_me <- aov(monto_credito ~ banco, data = df_anova_me)
-
-# 1.2 Homogeneidad de Varianzas (Test de Levene)
-message("\n--- 1. Homogeneidad de Varianzas (Levene) ---")
-levene_anova_me <- car::leveneTest(monto_credito ~ banco, data = df_anova_me)
-print(levene_anova_me)
-# INTERPRETACIÓN: Si p-valor < 0.05, el supuesto se viola.
-
-# 1.3 Normalidad de los Residuos (QQ-Plot Visual)
-message("\n--- Inspección Visual de Normalidad (QQ Plot) ---")
-
-# Extraemos los residuos del modelo ANOVA
-residuos_anova <- data.frame(Residuos = residuals(modelo_anova_me))
-
-# Usamos ggpubr::ggqqplot (o rstatix::ggqqplot, son equivalentes si ambos están cargados)
-# para generar el gráfico de normalidad
-qq_plot_anova <- ggpubr::ggqqplot(residuos_anova, x = "Residuos", title = "QQ Plot de Residuos del ANOVA")
-print(qq_plot_anova)
-
-# INTERPRETACIÓN: Los puntos deben seguir la línea diagonal.
-
-# 2. EJECUCIÓN FINAL DE LA PRUEBA ANOVA
-# ------------------------------------------------------------------------------
-resultado_anova <- summary(modelo_anova_me)
-
-print(resultado_anova)
-p_valor_anova <- resultado_anova[[1]]$`Pr(>F)`[1]
-
-# 3. ANÁLISIS POST-HOC (Tukey HSD)
-message("\n--- ANÁLISIS POST-HOC (Tukey HSD en ME) ---")
+# 3. ANÁLISIS POST-HOC (Games-Howell)
+message("\n--- ANÁLISIS POST-HOC (Games-Howell en ME) ---")
 
 if (p_valor_anova < 0.05) {
-  print(TukeyHSD(modelo_anova_me))
-  message("\nConclusión ANOVA: Se RECHAZA H0. Existe diferencia significativa en el monto promedio de crédito en ME entre al menos dos de los Top 5 bancos. El análisis Post-Hoc (Tukey HSD) muestra cuáles pares son diferentes.")
+  # ---------------------------------------------------------------
+  # PREPARACIÓN DE DATOS PARA LA TABLA INTUITIVA (USANDO GT)
+  # ---------------------------------------------------------------
+  tabla_games_howell_gt <- df_anova_me %>%
+    rstatix::games_howell_test(monto_credito ~ banco) %>%
+    
+    # Seleccionar las columnas esenciales
+    dplyr::select(group1, group2, estimate, conf.low, conf.high, p.adj) %>%
+    dplyr::rename(
+      `Diferencia Media` = estimate,
+      `IC Inferior` = conf.low,
+      `IC Superior` = conf.high,
+      `P-valor Ajustado` = p.adj
+    ) %>%
+    dplyr::mutate(
+      `Comparación` = paste(group1, " vs ", group2) # Formato de la columna de comparación
+    ) %>%
+    dplyr::select(-group1, -group2) # Eliminar columnas auxiliares
+  
+  # ---------------------------------------------------------------
+  # GENERACIÓN DE LA TABLA PROFESIONAL CON 'GT'
+  # ---------------------------------------------------------------
+  tabla_gt_final <- tabla_games_howell_gt %>%
+    gt::gt() %>%
+    gt::tab_header(
+      title = gt::md("**Diferencias Significativas Post-Hoc (Games-Howell)**"),
+      subtitle = "Monto Promedio de Crédito (ME) por pares de Bancos"
+    ) %>%
+    # Formato para los montos (sin decimales)
+    gt::fmt_number(
+      columns = c(`Diferencia Media`, `IC Inferior`, `IC Superior`),
+      decimals = 0,
+      use_seps = TRUE 
+    ) %>%
+    # Formato para el P-valor (4 decimales)
+    gt::fmt_number(columns = `P-valor Ajustado`, decimals = 4) %>%
+    
+    # Formato Condicional: Resaltar en verde si es significativo (P < 0.05)
+    gt::tab_style(
+      style = gt::cell_fill(color = "#C3E6CB"), 
+      locations = gt::cells_body(
+        columns = `P-valor Ajustado`,
+        rows = `P-valor Ajustado` < 0.05
+      )
+    ) %>%
+    # Combinar los intervalos de confianza en una sola columna
+    gt::cols_merge(
+      columns = c(`IC Inferior`, `IC Superior`),
+      pattern = "[{1}, {2}]"
+    ) %>%
+    gt::cols_label(
+      `IC Inferior` = "Intervalo de Confianza 95%"
+    ) %>%
+    gt::tab_footnote(
+      footnote = gt::md("**Significativo** si P-valor Ajustado < 0.05"),
+      locations = gt::cells_column_labels(columns = `P-valor Ajustado`)
+    )
+  
+  # MOSTRAR LA TABLA PROFESIONAL EN EL VISOR DE RSTUDIO
+  print(tabla_gt_final)
+  
+  message("\n**Conclusión ANOVA:** Se **RECHAZA H0**. Existe diferencia significativa en el monto promedio de crédito en ME entre al menos dos de los Top 5 bancos. El análisis Post-Hoc (**Games-Howell**) detalla cuáles pares son diferentes.")
 } else {
-  message("\nConclusión ANOVA: NO se puede rechazar H0. Las medias de los Top 5 bancos en ME son estadísticamente iguales.")
+  message("\n**Conclusión ANOVA:** NO se puede rechazar H0. Las medias de los Top 5 bancos en ME son estadísticamente iguales.")
 }
 
-
 # === GRÁFICO 1: BOXPLOT DE DISTRIBUCIÓN POR BANCO (ME) ===
-
-#El boxplot muestra la distribución completa de los montos de crédito para cada banco, 
-#incluyendo la mediana (línea central), los cuartiles (la caja) y los valores atípicos (puntos).
-
-#Insight: Es ideal para visualizar la variabilidad y la asimetría dentro de cada banco y si sus medianas se solapan
-#(lo que indicaría que no hay diferencia significativa).
-
 grafico_boxplot_anova <- df_anova_me %>%
   ggplot(aes(x = fct_reorder(banco, monto_credito, .fun = median, .desc = TRUE), 
              y = monto_credito)) +
-  geom_boxplot(aes(fill = banco), outlier.alpha = 0.3) + # outlier.alpha para ver los puntos atípicos
+  geom_boxplot(aes(fill = banco), outlier.alpha = 0.3) + 
   scale_y_continuous(labels = scales::comma) + 
   labs(
     title = "Distribución del Monto de Crédito Agrícola (ME)",
@@ -413,37 +446,26 @@ grafico_boxplot_anova <- df_anova_me %>%
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1), # Gira las etiquetas del eje X
+    axis.text.x = element_text(angle = 45, hjust = 1), 
     plot.title = element_text(face = "bold", hjust = 0.5),
-    legend.position = "none" # La leyenda es redundante con el eje X y el color
+    legend.position = "none" 
   )
 
 print(grafico_boxplot_anova)
 
 
 # === GRÁFICO 2: BARRAS DE MEDIA CON INTERVALOS DE CONFIANZA (IC) ===
-
-#Este gráfico se enfoca directamente en la medida central (la media), que es lo que compara la ANOVA.
-#Insight: Permite ver rápidamente qué bancos tienen la media más alta y, lo más importante, 
-#las barras de error (intervalos de confianza) indican la precisión de esa media.
-#Si los intervalos de confianza de dos bancos no se solapan, 
-#es una fuerte indicación visual de que la diferencia es estadísticamente significativa
-
 grafico_barras_ic <- df_anova_me %>%
-  # Calculamos la media y el error estándar (SE) para las barras de error
   group_by(banco) %>%
   summarise(
     media_credito = mean(monto_credito),
     se_credito = sd(monto_credito) / sqrt(n()),
     .groups = 'drop'
   ) %>%
-  # Ordenamos los bancos por su media para el gráfico
   mutate(banco = fct_reorder(banco, media_credito)) %>% 
   
   ggplot(aes(x = banco, y = media_credito)) +
-  # Barras que muestran la Media
   geom_bar(stat = "identity", fill = "#0072B2") + 
-  # Barras de Error (Usando el 95% IC: Media ± 1.96 * SE)
   geom_errorbar(
     aes(ymin = media_credito - 1.96 * se_credito, 
         ymax = media_credito + 1.96 * se_credito),
@@ -457,7 +479,7 @@ grafico_barras_ic <- df_anova_me %>%
     x = "Banco",
     y = "Monto Promedio de Crédito"
   ) +
-  coord_flip() + # Para mejor lectura
+  coord_flip() + 
   theme_minimal(base_size = 14) +
   theme(plot.title = element_text(face = "bold", hjust = 0))
 
